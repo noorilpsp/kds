@@ -13,7 +13,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, AlertTriangle } from "lucide-react";
 
 type OrderStatus = "pending" | "preparing" | "ready";
 
@@ -24,6 +24,10 @@ interface OrderItem {
   quantity: number;
   customizations: string[];
   stationId?: string;
+  isNew?: boolean;
+  isModified?: boolean;
+  isRemoved?: boolean;
+  changeDetails?: string;
 }
 
 interface Order {
@@ -42,6 +46,8 @@ interface Order {
   originalOrderId?: string;
   isRecalled?: boolean;
   recalledAt?: string;
+  isModified?: boolean;
+  modifiedAt?: string;
 }
 
 interface KDSTicketProps {
@@ -101,6 +107,51 @@ const ORDER_TYPE_BADGE: Record<Order["orderType"], { icon: string; label: string
   delivery: { icon: "🚚", label: "DELIVERY" },
 };
 
+// Allergen detection
+const ALLERGEN_KEYWORDS = [
+  'allergy', 'allergic', 'allergen',
+  'peanut', 'nut', 'tree nut',
+  'gluten', 'celiac', 'coeliac',
+  'dairy', 'lactose', 'milk',
+  'shellfish', 'seafood', 'fish',
+  'egg',
+  'soy', 'soya',
+  'sesame'
+];
+
+function detectAllergens(order: Order): string[] {
+  const found: string[] = [];
+  const textToScan = [
+    order.specialInstructions || '',
+    ...order.items.flatMap(i => i.customizations)
+  ].join(' ').toLowerCase();
+  
+  for (const keyword of ALLERGEN_KEYWORDS) {
+    if (textToScan.includes(keyword)) {
+      found.push(keyword);
+    }
+  }
+  
+  return [...new Set(found)];
+}
+
+function getAllergenLabel(allergens: string[]): string {
+  // Prioritize specific allergen types
+  if (allergens.some(a => a.includes('peanut') || a.includes('nut'))) return 'NUT ALLERGY';
+  if (allergens.some(a => a.includes('gluten') || a.includes('celiac'))) return 'GLUTEN ALLERGY';
+  if (allergens.some(a => a.includes('dairy') || a.includes('lactose') || a.includes('milk'))) return 'DAIRY ALLERGY';
+  if (allergens.some(a => a.includes('shellfish') || a.includes('seafood') || a.includes('fish'))) return 'SHELLFISH ALLERGY';
+  if (allergens.some(a => a.includes('egg'))) return 'EGG ALLERGY';
+  if (allergens.some(a => a.includes('soy'))) return 'SOY ALLERGY';
+  if (allergens.some(a => a.includes('sesame'))) return 'SESAME ALLERGY';
+  return 'ALLERGEN';
+}
+
+function itemHasAllergen(item: OrderItem): boolean {
+  const text = item.customizations.join(' ').toLowerCase();
+  return ALLERGEN_KEYWORDS.some(keyword => text.includes(keyword));
+}
+
 export function KDSTicket({ 
   order, 
   onAction,
@@ -125,6 +176,16 @@ export function KDSTicket({
   const [selectedItem, setSelectedItem] = useState<OrderItem | null>(null);
   const [refireReason, setRefireReason] = useState<string>("");
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
+
+  // Detect allergens
+  const allergens = detectAllergens(order);
+  const hasAllergen = allergens.length > 0;
+  const allergenLabel = hasAllergen ? getAllergenLabel(allergens) : '';
+
+  // Check if modification highlights should show (fade after 2 minutes)
+  const showModificationHighlights = order.isModified && order.modifiedAt 
+    ? (Date.now() - new Date(order.modifiedAt).getTime()) < 120000
+    : false;
 
   const handleRefireClick = (item: OrderItem) => {
     setSelectedItem(item);
@@ -246,11 +307,15 @@ export function KDSTicket({
     mass: 1,
   };
 
-  // Remake/Recalled badge styling
-  const badgeBorderClass = order.isRemake
+  // Remake/Recalled/Allergen/Modified badge styling
+  const badgeBorderClass = hasAllergen
+    ? "border-l-4 border-y-2 border-r-2 border-red-600 ring-2 ring-red-500"
+    : order.isRemake
     ? "border-l-4 border-y-2 border-r-2 border-red-500"
     : order.isRecalled
     ? "border-l-4 border-y-2 border-r-2 border-yellow-500"
+    : showModificationHighlights
+    ? "border-l-4 border-y-2 border-r-2 border-amber-500"
     : borderClass;
 
   return (
@@ -277,11 +342,26 @@ export function KDSTicket({
         className={`w-full max-w-[300px] 2xl:max-w-[340px] ${landingGlowClass}`}
       >
         <Card className={`relative overflow-hidden pt-0 pb-0 ${badgeBorderClass} ${shadowClass} ${highlightClass}`}>
+          {/* ALLERGEN Banner - Highest priority */}
+          {hasAllergen && (
+            <div className="bg-red-600 text-white px-3 py-2 font-bold text-base 2xl:text-lg flex items-center justify-center gap-2">
+              <AlertTriangle className="w-5 h-5 2xl:w-6 2xl:h-6" />
+              {allergenLabel}
+            </div>
+          )}
+          
+          {/* MODIFIED Badge */}
+          {!hasAllergen && showModificationHighlights && (
+            <div className="bg-amber-500 text-black px-2 py-1 text-center font-bold text-sm 2xl:text-base">
+              ✏️ MODIFIED
+            </div>
+          )}
+          
           {/* REMAKE/RECALLED Badge */}
-          {(order.isRemake || order.isRecalled) && (
+          {!hasAllergen && !showModificationHighlights && (order.isRemake || order.isRecalled) && (
             <div className={`px-2 py-1 text-center font-bold text-sm 2xl:text-base ${
               order.isRemake 
-                ? "bg-red-500 text-white" 
+                ? "bg-red-500 text-white"
                 : "bg-yellow-500 text-black"
             }`}>
               {order.isRemake ? "🔄 REMAKE" : "↩ RECALLED"}
@@ -333,18 +413,41 @@ export function KDSTicket({
 
           {/* ITEMS - tight spacing above = below */}
           <div className="-mt-1.5 pt-0 px-2 pb-0 2xl:-mt-2 2xl:px-3 2xl:pb-0 space-y-0 2xl:space-y-0.5">
-            {order.items.map((item) => (
-              <div key={item.id} className="space-y-0.5">
-                <div 
-                  className="group/item relative flex items-baseline gap-2 text-lg 2xl:text-xl leading-snug"
-                  onMouseEnter={() => setHoveredItemId(item.id)}
-                  onMouseLeave={() => setHoveredItemId(null)}
-                >
-                  <span className="font-bold text-foreground tabular-nums">{item.quantity}x</span>
-                  <span className="font-bold text-foreground">{item.name}</span>
-                  {item.variant && (
-                    <span className="text-muted-foreground text-base 2xl:text-lg font-medium">({item.variant})</span>
-                  )}
+            {order.items.map((item) => {
+              const hasItemAllergen = itemHasAllergen(item);
+              const itemChangeClass = showModificationHighlights
+                ? item.isNew
+                  ? "text-green-600 dark:text-green-400"
+                  : item.isModified
+                  ? "text-amber-600 dark:text-amber-400"
+                  : item.isRemoved
+                  ? "line-through opacity-50"
+                  : ""
+                : "";
+              
+              return (
+                <div key={item.id} className={`space-y-0.5 ${hasItemAllergen ? 'border-l-4 border-red-500 pl-2 bg-red-50 dark:bg-red-950/30' : ''}`}>
+                  <div 
+                    className="group/item relative flex items-baseline gap-2 text-lg 2xl:text-xl leading-snug"
+                    onMouseEnter={() => setHoveredItemId(item.id)}
+                    onMouseLeave={() => setHoveredItemId(null)}
+                  >
+                    <span className={`font-bold tabular-nums ${itemChangeClass || 'text-foreground'}`}>{item.quantity}x</span>
+                    <span className={`font-bold ${itemChangeClass || 'text-foreground'}`}>{item.name}</span>
+                    {item.variant && (
+                      <span className={`text-base 2xl:text-lg font-medium ${itemChangeClass || 'text-muted-foreground'}`}>({item.variant})</span>
+                    )}
+                    {/* Modification label */}
+                    {showModificationHighlights && item.isNew && (
+                      <span className="ml-1 text-xs font-bold text-green-600 dark:text-green-400">← NEW</span>
+                    )}
+                    {showModificationHighlights && item.isModified && (
+                      <span className="ml-1 text-xs font-bold text-amber-600 dark:text-amber-400">← CHANGED</span>
+                    )}
+                    {showModificationHighlights && item.isRemoved && (
+                      <span className="ml-1 text-xs font-bold text-red-600 dark:text-red-400">← REMOVED</span>
+                    )}
+                  </div>
                   {/* Re-fire button - shows on hover (desktop) */}
                   {onRefire && hoveredItemId === item.id && (
                     <button
@@ -359,58 +462,56 @@ export function KDSTicket({
                       <RotateCcw className="w-4 h-4 text-muted-foreground hover:text-foreground" />
                     </button>
                   )}
-                </div>
-                
-                {/* Modifiers - work-first: visible, readable, part of cooking task */}
-                {item.customizations.length > 0 && (
-                  <div className="pl-4 2xl:pl-5 space-y-1">
-                    {item.customizations.map((customization, index) => {
-                      const lower = customization.toLowerCase();
-                      const isRemoval = lower.startsWith('no ');
-                      const isAddition =
-                        lower.startsWith('extra ') ||
-                        lower.startsWith('add ') ||
-                        lower.startsWith('with ') ||
-                        lower.startsWith('double ') ||
-                        lower.startsWith('plus ');
-                      const displayText = isRemoval
-                        ? customization.replace(/^no\s+/i, '').toUpperCase()
-                        : customization;
-                      const prefix = isRemoval ? '−' : isAddition ? '+' : '•';
-                      return (
-                        <div
-                          key={index}
-                          className={`text-base 2xl:text-lg leading-snug flex items-baseline gap-2 ${
-                            isRemoval
-                              ? 'text-red-500 dark:text-red-400 font-semibold'
-                              : isAddition
-                                ? 'text-emerald-600 dark:text-emerald-400 font-medium'
-                                : 'text-foreground/85 font-medium'
-                          }`}
-                        >
-                          <span
-                            className={`shrink-0 ${isRemoval ? 'text-red-500 dark:text-red-400' : 'opacity-90'}`}
-                            aria-hidden
+                  {/* Modifiers - work-first: visible, readable, part of cooking task */}
+                  {item.customizations.length > 0 && (
+                    <div className="pl-4 2xl:pl-5 space-y-1">
+                      {item.customizations.map((customization, index) => {
+                        const lower = customization.toLowerCase();
+                        const isRemoval = lower.startsWith('no ');
+                        const isAddition =
+                          lower.startsWith('extra ') ||
+                          lower.startsWith('add ') ||
+                          lower.startsWith('with ') ||
+                          lower.startsWith('double ') ||
+                          lower.startsWith('plus ');
+                        const displayText = isRemoval
+                          ? customization.replace(/^no\s+/i, '').toUpperCase()
+                          : customization;
+                        const prefix = isRemoval ? '−' : isAddition ? '+' : '•';
+                        return (
+                          <div
+                            key={index}
+                            className={`text-base 2xl:text-lg leading-snug flex items-baseline gap-2 ${
+                              isRemoval
+                                ? 'text-red-500 dark:text-red-400 font-semibold'
+                                : isAddition
+                                  ? 'text-emerald-600 dark:text-emerald-400 font-medium'
+                                  : 'text-foreground/85 font-medium'
+                            }`}
                           >
-                            {prefix}
-                          </span>
-                          {isRemoval ? (
-                            <span>
-                              <span className="font-semibold">NO </span>
-                              {displayText}
+                            <span
+                              className={`shrink-0 ${isRemoval ? 'text-red-500 dark:text-red-400' : 'opacity-90'}`}
+                              aria-hidden
+                            >
+                              {prefix}
                             </span>
-                          ) : (
-                            <span>{displayText}</span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ))}
+                            {isRemoval ? (
+                              <span>
+                                <span className="font-semibold">NO </span>
+                                {displayText}
+                              </span>
+                            ) : (
+                              <span>{displayText}</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-
           {/* SPECIAL NOTES */}
           {order.specialInstructions && (
             <div className="mx-2 -mt-1 mb-2 2xl:mx-3 2xl:-mt-1.5 2xl:mb-3 px-2 py-1.5 2xl:px-3 2xl:py-2 bg-amber-500/20 border border-amber-500/40 rounded-md">
@@ -444,63 +545,63 @@ export function KDSTicket({
               >
                 {label}
               </Button>
-          )}
-        </div>
-      </Card>
-    </motion.div>
+            )}
+          </div>
+        </Card>
+      </motion.div>
 
-    {/* Re-fire Confirmation Dialog */}
-    <Dialog open={refireDialogOpen} onOpenChange={setRefireDialogOpen}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Re-fire Item?</DialogTitle>
-        </DialogHeader>
-        {selectedItem && (
-          <div className="space-y-4">
-            <div className="text-lg font-semibold">
-              {selectedItem.quantity}x {selectedItem.name}
-              {selectedItem.variant && (
-                <span className="text-muted-foreground font-medium"> ({selectedItem.variant})</span>
-              )}
-              {selectedItem.customizations.length > 0 && (
-                <div className="pl-4 mt-1 space-y-0.5">
-                  {selectedItem.customizations.map((custom, idx) => (
-                    <div key={idx} className="text-sm text-muted-foreground">
-                      + {custom}
-                    </div>
+      {/* Re-fire Confirmation Dialog */}
+      <Dialog open={refireDialogOpen} onOpenChange={setRefireDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Re-fire Item?</DialogTitle>
+          </DialogHeader>
+          {selectedItem && (
+            <div className="space-y-4">
+              <div className="text-lg font-semibold">
+                {selectedItem.quantity}x {selectedItem.name}
+                {selectedItem.variant && (
+                  <span className="text-muted-foreground font-medium"> ({selectedItem.variant})</span>
+                )}
+                {selectedItem.customizations.length > 0 && (
+                  <div className="pl-4 mt-1 space-y-0.5">
+                    {selectedItem.customizations.map((custom, idx) => (
+                      <div key={idx} className="text-sm text-muted-foreground">
+                        + {custom}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Reason (optional):</label>
+                <div className="flex flex-wrap gap-2">
+                  {["Burned", "Dropped", "Wrong", "Other"].map((reason) => (
+                    <Button
+                      key={reason}
+                      type="button"
+                      variant={refireReason === reason ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setRefireReason(reason)}
+                    >
+                      {reason}
+                    </Button>
                   ))}
                 </div>
-              )}
-            </div>
-            
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Reason (optional):</label>
-              <div className="flex flex-wrap gap-2">
-                {["Burned", "Dropped", "Wrong", "Other"].map((reason) => (
-                  <Button
-                    key={reason}
-                    type="button"
-                    variant={refireReason === reason ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setRefireReason(reason)}
-                  >
-                    {reason}
-                  </Button>
-                ))}
               </div>
             </div>
-          </div>
-        )}
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setRefireDialogOpen(false)}>
-            Cancel
-          </Button>
-          <Button onClick={handleRefireConfirm}>
-            Re-fire
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  </>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRefireDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleRefireConfirm}>
+              Re-fire
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
