@@ -14,6 +14,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { RotateCcw, AlertTriangle } from "lucide-react";
+import { KDSSnoozePicker } from "./KDSSnoozePicker";
 
 type OrderStatus = "pending" | "preparing" | "ready";
 
@@ -371,6 +372,7 @@ export function KDSTicket({
         layout={!(isLanding && (columnAccent === "ready" || columnAccent === "preparing"))}
         layoutId={`${order.id}-${columnAccent ?? "preparing"}`}
         initial={skipEntranceAnimation ? getAnimateState() : getInitialAnimation()}
+        className={order.isSnoozed ? "opacity-50" : ""}
         animate={getAnimateState()}
         exit={
           columnAccent === "new"
@@ -420,6 +422,45 @@ export function KDSTicket({
               {order.isRemake ? "🔄 REMAKE" : "↩ RECALLED"}
             </div>
           )}
+
+          {/* STOCK ALERT Banner */}
+          {hasStockIssues && !order.isSnoozed && (
+            <div className="bg-orange-600 text-white px-2 py-1 text-center">
+              <div className="font-bold text-sm 2xl:text-base">
+                ⚠️ STOCK ISSUE
+              </div>
+              <div className="text-xs 2xl:text-sm">
+                {stockIssues.map(({ item, stockStatus }, i) => (
+                  <div key={i}>
+                    {item.name}: {stockStatus?.status === 'out' ? 'OUT OF STOCK' : `LOW (${stockStatus?.lowCount} left)`}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* SNOOZED Banner */}
+          {order.isSnoozed && snoozeCountdown && onWakeUp && (
+            <div className="bg-blue-600 text-white px-2 py-2 flex items-center justify-between">
+              <div>
+                <div className="font-bold text-sm 2xl:text-base">
+                  💤 SNOOZED
+                </div>
+                <div className="text-xs 2xl:text-sm">
+                  Waking in {snoozeCountdown}
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onWakeUp(order.id)}
+                className="bg-white text-blue-600 hover:bg-blue-50 border-white"
+              >
+                Wake Up
+              </Button>
+            </div>
+          )}
+
           {/* COMPACT METADATA ROW - reduced dominance, item-focused hierarchy */}
           <div className="px-2 pt-1.5 pb-0 2xl:px-3 2xl:pt-2 2xl:pb-0 bg-muted/30 border-b border-border/50">
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-sm 2xl:text-base text-muted-foreground leading-snug">
@@ -592,12 +633,25 @@ export function KDSTicket({
                 Complete
               </Button>
             ) : (
-              <Button
-                className="w-full font-semibold text-base 2xl:text-lg h-11 2xl:h-12"
-                onClick={() => onAction(order.id, nextStatus)}
-              >
-                {label}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  className="flex-1 font-semibold text-base 2xl:text-lg h-11 2xl:h-12"
+                  onClick={() => onAction(order.id, nextStatus)}
+                >
+                  {label}
+                </Button>
+                {canSnooze && onSnooze && order.status === 'pending' && !order.isSnoozed && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="bg-transparent px-3"
+                    onClick={() => setShowSnoozePicker(true)}
+                    title="Snooze this order"
+                  >
+                    💤
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         </Card>
@@ -655,6 +709,17 @@ export function KDSTicket({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Snooze Picker Dialog */}
+      {showSnoozePicker && onSnooze && (
+        <KDSSnoozePicker
+          onSnooze={(seconds) => {
+            onSnooze(order.id, seconds);
+            setShowSnoozePicker(false);
+          }}
+          onCancel={() => setShowSnoozePicker(false)}
+        />
+      )}
     </>
   );
 }

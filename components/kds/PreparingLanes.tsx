@@ -42,6 +42,10 @@ interface PreparingLanesProps {
   stations?: Station[];
   allOrders: Order[];
   transitioningTickets?: Map<string, { from: OrderStatus; to: OrderStatus }>;
+  canSnooze?: (order: Order) => boolean;
+  onSnooze?: (orderId: string, durationSeconds: number) => void;
+  onWakeUp?: (orderId: string) => void;
+  stockStatuses?: Array<{itemName: string; status: string; lowCount?: number}>;
 }
 
 const SUB_STATIONS = [

@@ -38,6 +38,10 @@ interface KDSColumnsProps {
   currentStationId?: string;
   stations?: Station[];
   transitioningTickets?: Map<string, { from: OrderStatus; to: OrderStatus }>;
+  canSnooze?: (order: Order) => boolean;
+  onSnooze?: (orderId: string, durationSeconds: number) => void;
+  onWakeUp?: (orderId: string) => void;
+  stockStatuses?: Array<{itemName: string; status: string; lowCount?: number}>;
 }
 
 export function KDSColumns({ 
@@ -48,7 +52,11 @@ export function KDSColumns({
   batchHighlightedIds = [],
   currentStationId,
   stations,
-  transitioningTickets = new Map()
+  transitioningTickets = new Map(),
+  canSnooze,
+  onSnooze,
+  onWakeUp,
+  stockStatuses = []
 }: KDSColumnsProps) {
   const [activeTab, setActiveTab] = useState<OrderStatus>("pending");
 
@@ -83,6 +91,10 @@ export function KDSColumns({
             currentStationId={currentStationId}
             stations={stations}
             transitioningTickets={transitioningTickets}
+            canSnooze={canSnooze}
+            onSnooze={onSnooze}
+            onWakeUp={onWakeUp}
+            stockStatuses={stockStatuses}
           />
         </div>
 
@@ -104,6 +116,10 @@ export function KDSColumns({
               stations={stations}
               allOrders={orders}
               transitioningTickets={transitioningTickets}
+              canSnooze={canSnooze}
+              onSnooze={onSnooze}
+              onWakeUp={onWakeUp}
+              stockStatuses={stockStatuses}
             />
           </div>
         </div>
@@ -122,6 +138,10 @@ export function KDSColumns({
             stations={stations}
             isReady={true}
             transitioningTickets={transitioningTickets}
+            canSnooze={canSnooze}
+            onSnooze={onSnooze}
+            onWakeUp={onWakeUp}
+            stockStatuses={stockStatuses}
           />
         </div>
       </div>

@@ -43,6 +43,10 @@ interface KDSColumnProps {
   isMobile?: boolean;
   isReady?: boolean;
   transitioningTickets?: Map<string, { from: OrderStatus; to: OrderStatus }>;
+  canSnooze?: (order: Order) => boolean;
+  onSnooze?: (orderId: string, durationSeconds: number) => void;
+  onWakeUp?: (orderId: string) => void;
+  stockStatuses?: Array<{itemName: string; status: string; lowCount?: number}>;
 }
 
 function getElapsedMinutes(createdAt: string): number {
@@ -92,7 +96,11 @@ export function KDSColumn({
   stations = [],
   isMobile = false,
   isReady = false,
-  transitioningTickets = new Map()
+  transitioningTickets = new Map(),
+  canSnooze,
+  onSnooze,
+  onWakeUp,
+  stockStatuses = []
 }: KDSColumnProps) {
   // Track tickets that are in "staged" position (at top, before sliding to final position)
   const [stagedTickets, setStagedTickets] = useState<Set<string>>(new Set());
@@ -270,6 +278,10 @@ export function KDSColumn({
                     isLanding={justArrived || isStaged}
                     landingType={(justArrived || isStaged) ? (status === "ready" ? "ready" : "preparing") : undefined}
                     skipEntranceAnimation={status === "pending" && !hasCompletedInitialRender.current}
+                    canSnooze={canSnooze ? canSnooze(order) : false}
+                    onSnooze={onSnooze}
+                    onWakeUp={onWakeUp}
+                    stockStatuses={stockStatuses}
                   />
                 );
               })}

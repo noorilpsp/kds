@@ -1175,6 +1175,10 @@ export default function KDSPage() {
               currentStationId={activeStationId}
               stations={STATIONS}
               transitioningTickets={transitioningTickets}
+              canSnooze={canSnooze}
+              onSnooze={handleSnooze}
+              onWakeUp={handleWakeUp}
+              stockStatuses={stockStatuses}
             />
           </div>
         </>
