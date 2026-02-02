@@ -16,6 +16,8 @@ export interface Station {
   color: string;
 }
 
+export type ViewMode = "tickets" | "all-day";
+
 type OrderStatus = "pending" | "preparing" | "ready";
 
 interface OrderItem {
@@ -46,6 +48,8 @@ interface KDSHeaderProps {
   orderCounts: Record<string, number>;
   completedOrders?: CompletedOrder[];
   onRecall?: (orderId: string) => void;
+  viewMode?: ViewMode;
+  onViewModeChange?: (mode: ViewMode) => void;
 }
 
 export function KDSHeader({ 
@@ -57,6 +61,8 @@ export function KDSHeader({
   orderCounts,
   completedOrders = [],
   onRecall,
+  viewMode = "tickets",
+  onViewModeChange,
 }: KDSHeaderProps) {
   const getTimeAgo = (bumpedAt: string) => {
     const elapsed = Math.floor((Date.now() - new Date(bumpedAt).getTime()) / 60000);
@@ -98,12 +104,43 @@ export function KDSHeader({
         })}
       </div>
 
-      {/* Kitchen logo centered */}
-      <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
-        <ChefHat className="h-6 w-6" />
-        <h1 className="text-xl font-semibold uppercase tracking-wider">
-          {stationName}
-        </h1>
+      {/* Kitchen logo and view toggle centered */}
+      <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-6">
+        <div className="flex items-center gap-2">
+          <ChefHat className="h-6 w-6" />
+          <h1 className="text-xl font-semibold uppercase tracking-wider">
+            {stationName}
+          </h1>
+        </div>
+        
+        {onViewModeChange && (
+          <div className="flex items-center rounded-md border border-border bg-muted/50 p-1">
+            <Button
+              variant={viewMode === "tickets" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => onViewModeChange("tickets")}
+              className={`h-7 px-3 text-xs font-medium ${
+                viewMode === "tickets" 
+                  ? "bg-background shadow-sm" 
+                  : "bg-transparent hover:bg-background/50"
+              }`}
+            >
+              Tickets
+            </Button>
+            <Button
+              variant={viewMode === "all-day" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => onViewModeChange("all-day")}
+              className={`h-7 px-3 text-xs font-medium ${
+                viewMode === "all-day" 
+                  ? "bg-background shadow-sm" 
+                  : "bg-transparent hover:bg-background/50"
+              }`}
+            >
+              All-Day
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Active count and Recall button on the right */}

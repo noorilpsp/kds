@@ -56,6 +56,7 @@ interface KDSTicketProps {
   onRefire?: (item: OrderItem, reason?: string) => void;
   priority?: number | null;
   isHighlighted?: boolean;
+  isBatchHighlighted?: boolean;
   currentStationId?: string;
   waitingStations?: Station[];
   isStationComplete?: boolean;
@@ -158,6 +159,7 @@ export function KDSTicket({
   onRefire,
   priority, 
   isHighlighted,
+  isBatchHighlighted = false,
   currentStationId,
   waitingStations = [],
   isStationComplete = false,
@@ -307,7 +309,7 @@ export function KDSTicket({
     mass: 1,
   };
 
-  // Remake/Recalled/Allergen/Modified badge styling
+  // Remake/Recalled/Allergen/Modified/Batch badge styling
   const badgeBorderClass = hasAllergen
     ? "border-l-4 border-y-2 border-r-2 border-red-600 ring-2 ring-red-500"
     : order.isRemake
@@ -316,6 +318,8 @@ export function KDSTicket({
     ? "border-l-4 border-y-2 border-r-2 border-yellow-500"
     : showModificationHighlights
     ? "border-l-4 border-y-2 border-r-2 border-amber-500"
+    : isBatchHighlighted
+    ? "border-l-4 border-y-2 border-r-2 border-amber-500 ring-2 ring-amber-400"
     : borderClass;
 
   return (
@@ -354,6 +358,13 @@ export function KDSTicket({
           {!hasAllergen && showModificationHighlights && (
             <div className="bg-amber-500 text-black px-2 py-1 text-center font-bold text-sm 2xl:text-base">
               ✏️ MODIFIED
+            </div>
+          )}
+          
+          {/* BATCH Badge */}
+          {!hasAllergen && !showModificationHighlights && !order.isRemake && !order.isRecalled && isBatchHighlighted && (
+            <div className="px-2 py-1 text-center font-bold text-sm 2xl:text-base bg-amber-500 text-white">
+              💡 BATCH ITEM
             </div>
           )}
           

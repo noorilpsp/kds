@@ -37,6 +37,7 @@ interface PreparingLanesProps {
   onAction: (orderId: string, newStatus: OrderStatus) => void;
   onRefire?: (item: OrderItem, reason?: string) => void;
   highlightedTicketId?: string | null;
+  batchHighlightedIds?: string[];
   currentStationId?: string;
   stations?: Station[];
   allOrders: Order[];
@@ -94,6 +95,7 @@ export function PreparingLanes({
   onAction,
   onRefire,
   highlightedTicketId,
+  batchHighlightedIds = [],
   currentStationId,
   stations = [],
   allOrders,
@@ -276,6 +278,7 @@ export function PreparingLanes({
                   onRefire={onRefire}
                   priority={priority}
                   isHighlighted={order.id === highlightedTicketId}
+                  isBatchHighlighted={batchHighlightedIds.includes(order.id)}
                   currentStationId={currentStationId}
                   waitingStations={waitingStations}
                   isStationComplete={isStationComplete}

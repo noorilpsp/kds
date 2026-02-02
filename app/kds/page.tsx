@@ -3,9 +3,11 @@
 import { useState, useRef, useCallback, useMemo } from "react";
 import { KDSHeader, type Station } from "@/components/kds/KDSHeader";
 import { KDSColumns } from "@/components/kds/KDSColumns";
-import { KDSToastContainer, type OrderChange } from "@/components/kds/KDSNewOrderToast";
+import { KDSToastContainer, type OrderChange, type ModificationToast } from "@/components/kds/KDSNewOrderToast";
+import { KDSAllDayView } from "@/components/kds/KDSAllDayView";
+import { KDSBatchingHints, type BatchSuggestion } from "@/components/kds/KDSBatchingHints";
 import { Button } from "@/components/ui/button";
-import { ModificationToast } from "@/components/kds/KDSModificationToast"; // Import ModificationToast
+import { ViewModeType } from "@/components/kds/types"; // Declare or import ViewModeType here
 
 type OrderStatus = "pending" | "preparing" | "ready";
 
@@ -481,7 +483,10 @@ export default function KDSPage() {
   const [toasts, setToasts] = useState<NewOrderToast[]>([]);
   const [modificationToasts, setModificationToasts] = useState<ModificationToast[]>([]);
   const [highlightedTicketId, setHighlightedTicketId] = useState<string | null>(null);
+  const [batchHighlightedIds, setBatchHighlightedIds] = useState<string[]>([]);
   const [activeStationId, setActiveStationId] = useState<string>(STATIONS[0].id);
+  const [viewMode, setViewMode] = useState<ViewModeType>("tickets");
+  const [dismissedBatches, setDismissedBatches] = useState<Set<string>>(new Set());
   // Track tickets that just transitioned for animation purposes
   const [transitioningTickets, setTransitioningTickets] = useState<Map<string, { from: OrderStatus; to: OrderStatus }>>(new Map());
   const toastTimeoutRefs = useRef<Map<string, NodeJS.Timeout>>(new Map());
@@ -588,6 +593,30 @@ export default function KDSPage() {
       clearTimeout(timeout);
       modificationToastTimeoutRefs.current.delete(orderId);
     }
+  }, []);
+
+  const batchSuggestions: BatchSuggestion[] = []; // Initialize batchSuggestions here
+
+  const handleBatchDismiss = useCallback((index: number) => {
+    const batch = batchSuggestions[index];
+    if (batch) {
+      const key = `${batch.itemName}|${batch.variant || ''}`;
+      setDismissedBatches((prev) => new Set(prev).add(key));
+    }
+  }, [batchSuggestions]);
+
+  const handleBatchHighlight = useCallback((batch: BatchSuggestion) => {
+    // Highlight relevant tickets
+    setBatchHighlightedIds(batch.orderIds);
+
+    // Scroll to first ticket
+    const firstTicket = document.getElementById(`ticket-${batch.orderIds[0]}`);
+    firstTicket?.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    // Clear highlight after 30 seconds
+    setTimeout(() => {
+      setBatchHighlightedIds([]);
+    }, 30000);
   }, []);
 
   const handleRefire = useCallback((item: OrderItem, reason?: string) => {
@@ -884,6 +913,54 @@ export default function KDSPage() {
     })).filter(order => order.items.length > 0);
   }, [orders, activeStationId]);
 
+  // Detect batch opportunities
+  const batchSuggestionsMemo = useMemo(() => {
+    const threshold = 3;
+    const newOrders = filteredOrders.filter(o => o.status === 'pending');
+    
+    // Count items across orders
+    const itemCounts = new Map<string, {
+      quantity: number;
+      orderIds: Set<string>;
+      name: string;
+      variant: string | null;
+    }>();
+    
+    newOrders.forEach(order => {
+      order.items.forEach(item => {
+        const key = `${item.name}|${item.variant || ''}`;
+        const existing = itemCounts.get(key) || { 
+          quantity: 0, 
+          orderIds: new Set(),
+          name: item.name,
+          variant: item.variant,
+        };
+        existing.quantity += item.quantity;
+        existing.orderIds.add(order.id);
+        itemCounts.set(key, existing);
+      });
+    });
+    
+    // Filter to batches that meet threshold and haven't been dismissed
+    const batches: BatchSuggestion[] = [];
+    itemCounts.forEach((data, key) => {
+      if (data.orderIds.size >= threshold && !dismissedBatches.has(key)) {
+        const relevantOrders = newOrders.filter(o => data.orderIds.has(o.id));
+        batches.push({
+          itemName: data.name,
+          variant: data.variant,
+          totalQuantity: data.quantity,
+          orderCount: data.orderIds.size,
+          orderIds: Array.from(data.orderIds),
+          orderNumbers: relevantOrders.map(o => o.orderNumber),
+        });
+      }
+    });
+    
+    // Sort by quantity (highest first)
+    return batches.sort((a, b) => b.totalQuantity - a.totalQuantity).slice(0, 4); // Max 4 suggestions
+  }, [filteredOrders, dismissedBatches]);
+
   // Calculate order counts per station
   const orderCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -910,18 +987,38 @@ export default function KDSPage() {
         orderCounts={orderCounts}
         completedOrders={completedOrders}
         onRecall={handleRecall}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
       />
-      <div className="flex-1 overflow-hidden">
-        <KDSColumns 
-          orders={filteredOrders} 
-          onAction={handleAction}
-          onRefire={handleRefire}
-          highlightedTicketId={highlightedTicketId}
-          currentStationId={activeStationId}
-          stations={STATIONS}
-          transitioningTickets={transitioningTickets}
-        />
-      </div>
+      
+      {viewMode === "tickets" && (
+        <>
+          <KDSBatchingHints 
+            batches={batchSuggestions}
+            onDismiss={handleBatchDismiss}
+            onHighlight={handleBatchHighlight}
+            orders={filteredOrders}
+          />
+          <div className="flex-1 overflow-hidden">
+            <KDSColumns 
+              orders={filteredOrders} 
+              onAction={handleAction}
+              onRefire={handleRefire}
+              highlightedTicketId={highlightedTicketId}
+              batchHighlightedIds={batchHighlightedIds}
+              currentStationId={activeStationId}
+              stations={STATIONS}
+              transitioningTickets={transitioningTickets}
+            />
+          </div>
+        </>
+      )}
+      
+      {viewMode === "all-day" && (
+        <div className="flex-1 overflow-auto">
+          <KDSAllDayView orders={filteredOrders} />
+        </div>
+      )}
       
       <KDSToastContainer 
         toasts={toasts}

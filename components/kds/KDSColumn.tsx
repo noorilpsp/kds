@@ -37,6 +37,7 @@ interface KDSColumnProps {
   onAction: (orderId: string, newStatus: OrderStatus) => void;
   onRefire?: (item: OrderItem, reason?: string) => void;
   highlightedTicketId?: string | null;
+  batchHighlightedIds?: string[];
   currentStationId?: string;
   stations?: Station[];
   isMobile?: boolean;
@@ -86,6 +87,7 @@ export function KDSColumn({
   onAction,
   onRefire,
   highlightedTicketId,
+  batchHighlightedIds = [],
   currentStationId,
   stations = [],
   isMobile = false,
@@ -259,6 +261,7 @@ export function KDSColumn({
                     onRefire={onRefire}
                     priority={priority}
                     isHighlighted={order.id === highlightedTicketId}
+                    isBatchHighlighted={batchHighlightedIds.includes(order.id)}
                     currentStationId={currentStationId}
                     waitingStations={waitingStations}
                     isStationComplete={isStationComplete}

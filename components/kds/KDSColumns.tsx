@@ -34,6 +34,7 @@ interface KDSColumnsProps {
   onAction: (orderId: string, newStatus: OrderStatus) => void;
   onRefire?: (item: OrderItem, reason?: string) => void;
   highlightedTicketId?: string | null;
+  batchHighlightedIds?: string[];
   currentStationId?: string;
   stations?: Station[];
   transitioningTickets?: Map<string, { from: OrderStatus; to: OrderStatus }>;
@@ -44,6 +45,7 @@ export function KDSColumns({
   onAction,
   onRefire,
   highlightedTicketId,
+  batchHighlightedIds = [],
   currentStationId,
   stations,
   transitioningTickets = new Map()
@@ -77,6 +79,7 @@ export function KDSColumns({
             onAction={onAction}
             onRefire={onRefire}
             highlightedTicketId={highlightedTicketId}
+            batchHighlightedIds={batchHighlightedIds}
             currentStationId={currentStationId}
             stations={stations}
             transitioningTickets={transitioningTickets}
@@ -96,6 +99,7 @@ export function KDSColumns({
               onAction={onAction}
               onRefire={onRefire}
               highlightedTicketId={highlightedTicketId}
+              batchHighlightedIds={batchHighlightedIds}
               currentStationId={currentStationId}
               stations={stations}
               allOrders={orders}
@@ -113,6 +117,7 @@ export function KDSColumns({
             onAction={onAction}
             onRefire={onRefire}
             highlightedTicketId={highlightedTicketId}
+            batchHighlightedIds={batchHighlightedIds}
             currentStationId={currentStationId}
             stations={stations}
             isReady={true}
@@ -155,6 +160,7 @@ export function KDSColumns({
             status={activeTab}
             orders={orders}
             onAction={onAction}
+            batchHighlightedIds={batchHighlightedIds}
             onRefire={onRefire}
             highlightedTicketId={highlightedTicketId}
             currentStationId={currentStationId}
