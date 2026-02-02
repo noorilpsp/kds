@@ -35,6 +35,7 @@ interface Order {
 interface PreparingLanesProps {
   orders: Order[];
   onAction: (orderId: string, newStatus: OrderStatus) => void;
+  onRefire?: (item: OrderItem, reason?: string) => void;
   highlightedTicketId?: string | null;
   currentStationId?: string;
   stations?: Station[];
@@ -91,6 +92,7 @@ function assignCook(order: Order): { name: string; color: string } {
 export function PreparingLanes({
   orders,
   onAction,
+  onRefire,
   highlightedTicketId,
   currentStationId,
   stations = [],
@@ -266,23 +268,24 @@ export function PreparingLanes({
                       : !!(transition && transition.to === "preparing");
                     const isStaged = stagedTickets.has(order.id);
                     
-                    return (
-                      <KDSTicket 
-                        key={order.id} 
-                        order={order} 
-                        onAction={onAction}
-                        priority={priority}
-                        isHighlighted={order.id === highlightedTicketId}
-                        currentStationId={currentStationId}
-                        waitingStations={waitingStations}
-                        isStationComplete={isStationComplete}
-                        columnAccent="preparing"
-                        assignedCook={assignCook(order)}
-                        transitionDirection={justArrived ? "from-left" : undefined}
-                        isLanding={justArrived || isStaged}
-                        landingType={(justArrived || isStaged) ? "preparing" : undefined}
-                      />
-                    );
+              return (
+                <KDSTicket
+                  key={order.id}
+                  order={order}
+                  onAction={onAction}
+                  onRefire={onRefire}
+                  priority={priority}
+                  isHighlighted={order.id === highlightedTicketId}
+                  currentStationId={currentStationId}
+                  waitingStations={waitingStations}
+                  isStationComplete={isStationComplete}
+                  columnAccent="preparing"
+                  assignedCook={assignCook(order)}
+                  transitionDirection={justArrived ? "from-left" : undefined}
+                  isLanding={justArrived || isStaged}
+                  landingType={(justArrived || isStaged) ? "preparing" : undefined}
+                />
+              );
                   })}
                 </AnimatePresence>
               </div>

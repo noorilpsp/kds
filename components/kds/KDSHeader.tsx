@@ -1,11 +1,40 @@
-import { ChefHat } from "lucide-react";
+"use client";
+
+import { ChefHat, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export interface Station {
   id: string;
   name: string;
   icon: string;
   color: string;
+}
+
+type OrderStatus = "pending" | "preparing" | "ready";
+
+interface OrderItem {
+  id: string;
+  name: string;
+  variant: string | null;
+  quantity: number;
+  customizations: string[];
+  stationId?: string;
+}
+
+interface CompletedOrder {
+  id: string;
+  orderNumber: string;
+  orderType: "dine_in" | "pickup";
+  tableNumber: string | null;
+  customerName: string | null;
+  bumpedAt: string;
+  items: OrderItem[];
 }
 
 interface KDSHeaderProps {
@@ -15,6 +44,8 @@ interface KDSHeaderProps {
   activeStationId: string;
   onStationChange: (stationId: string) => void;
   orderCounts: Record<string, number>;
+  completedOrders?: CompletedOrder[];
+  onRecall?: (orderId: string) => void;
 }
 
 export function KDSHeader({ 
@@ -24,7 +55,14 @@ export function KDSHeader({
   activeStationId,
   onStationChange,
   orderCounts,
+  completedOrders = [],
+  onRecall,
 }: KDSHeaderProps) {
+  const getTimeAgo = (bumpedAt: string) => {
+    const elapsed = Math.floor((Date.now() - new Date(bumpedAt).getTime()) / 60000);
+    return elapsed < 1 ? "Just now" : `${elapsed}m ago`;
+  };
+
   return (
     <div className="relative flex items-center justify-between border-b border-border bg-background px-6 py-4">
       {/* Station switcher on the left */}
@@ -68,9 +106,77 @@ export function KDSHeader({
         </h1>
       </div>
 
-      {/* Active count on the right */}
-      <div className="text-muted-foreground">
-        <span className="font-medium">{activeCount}</span> active
+      {/* Active count and Recall button on the right */}
+      <div className="flex items-center gap-4">
+        <div className="text-muted-foreground">
+          <span className="font-medium">{activeCount}</span> active
+        </div>
+        
+        {onRecall && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2 bg-transparent">
+                <Undo2 className="w-4 h-4" />
+                Recall
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-[400px] p-0">
+              <div className="px-4 py-3 border-b border-border">
+                <h3 className="font-semibold">Recall Order</h3>
+              </div>
+              <ScrollArea className="h-[400px]">
+                <div className="p-2 space-y-2">
+                  {completedOrders.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-muted-foreground text-sm">
+                      No recently completed orders
+                    </div>
+                  ) : (
+                    completedOrders.map((order) => (
+                      <div
+                        key={order.id}
+                        className="p-3 border border-border rounded-lg hover:bg-muted transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div className="space-y-0.5">
+                            <div className="font-semibold">
+                              #{order.orderNumber}
+                              {order.orderType === "dine_in" && order.tableNumber && (
+                                <span className="text-muted-foreground font-normal"> · Table {order.tableNumber}</span>
+                              )}
+                              {order.orderType === "pickup" && order.customerName && (
+                                <span className="text-muted-foreground font-normal"> · {order.customerName}</span>
+                              )}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              Bumped {getTimeAgo(order.bumpedAt)}
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            onClick={() => onRecall(order.id)}
+                          >
+                            Recall
+                          </Button>
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {order.items.map((item, idx) => (
+                            <span key={item.id}>
+                              {item.quantity}x {item.name}
+                              {idx < order.items.length - 1 && ", "}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </ScrollArea>
+              <div className="px-4 py-2 border-t border-border bg-muted/30 text-xs text-center text-muted-foreground">
+                Showing last {Math.min(completedOrders.length, 10)} completed orders
+              </div>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
     </div>
   );

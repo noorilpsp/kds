@@ -29,6 +29,23 @@ interface Order {
   isPriority?: boolean;
   specialInstructions?: string;
   stationStatuses?: Record<string, OrderStatus>;
+  isRemake?: boolean;
+  remakeReason?: string;
+  originalOrderId?: string;
+  isRecalled?: boolean;
+  recalledAt?: string;
+}
+
+interface CompletedOrder {
+  id: string;
+  orderNumber: string;
+  orderType: "dine_in" | "pickup";
+  tableNumber: string | null;
+  customerName: string | null;
+  bumpedAt: string;
+  items: OrderItem[];
+  createdAt: string;
+  originalOrder: Order;
 }
 
 interface NewOrderToast {
@@ -453,6 +470,7 @@ const initialOrders: Order[] = [
 
 export default function KDSPage() {
   const [orders, setOrders] = useState<Order[]>(initialOrders);
+  const [completedOrders, setCompletedOrders] = useState<CompletedOrder[]>([]);
   const [toasts, setToasts] = useState<NewOrderToast[]>([]);
   const [highlightedTicketId, setHighlightedTicketId] = useState<string | null>(null);
   const [activeStationId, setActiveStationId] = useState<string>(STATIONS[0].id);
@@ -516,6 +534,71 @@ export default function KDSPage() {
       toastTimeoutRefs.current.delete(orderId);
     }
   }, []);
+
+  const handleRefire = useCallback((item: OrderItem, reason?: string) => {
+    // Find the original order
+    const originalOrder = orders.find(order => 
+      order.items.some(i => i.id === item.id)
+    );
+    
+    if (!originalOrder) return;
+
+    // Create remake order with "-R" suffix
+    const remakeOrder: Order = {
+      id: `remake-${Date.now()}`,
+      orderNumber: `${originalOrder.orderNumber}-R`,
+      orderType: originalOrder.orderType,
+      tableNumber: originalOrder.tableNumber,
+      customerName: originalOrder.customerName,
+      status: "pending",
+      createdAt: new Date().toISOString(),
+      items: [{ ...item, id: `remake-item-${Date.now()}` }], // Single item being remade
+      isRemake: true,
+      remakeReason: reason,
+      originalOrderId: originalOrder.id,
+      stationStatuses: item.stationId ? { [item.stationId]: "pending" } : undefined,
+    };
+
+    // Add remake order to the top (it will appear at top of NEW column)
+    setOrders((prev) => [remakeOrder, ...prev]);
+    addToast(remakeOrder);
+  }, [orders, addToast]);
+
+  const handleRecall = useCallback((completedOrderId: string) => {
+    const completedOrder = completedOrders.find(co => co.id === completedOrderId);
+    
+    if (!completedOrder) return;
+
+    // Restore the original order as a "recalled" ticket in READY column
+    const recalledOrder: Order = {
+      ...completedOrder.originalOrder,
+      id: `recalled-${Date.now()}`, // New ID for tracking
+      status: "ready",
+      isRecalled: true,
+      recalledAt: new Date().toISOString(),
+      // Set all station statuses to ready since it was completed
+      stationStatuses: completedOrder.originalOrder.stationStatuses 
+        ? Object.keys(completedOrder.originalOrder.stationStatuses).reduce((acc, key) => {
+            acc[key] = "ready";
+            return acc;
+          }, {} as Record<string, OrderStatus>)
+        : undefined,
+    };
+
+    // Add to orders
+    setOrders((prev) => [...prev, recalledOrder]);
+
+    // Remove from completed orders
+    setCompletedOrders((prev) => prev.filter(co => co.id !== completedOrderId));
+
+    // Scroll to and highlight the recalled ticket
+    setTimeout(() => {
+      const ticketElement = document.getElementById(`ticket-${recalledOrder.id}`);
+      ticketElement?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightedTicketId(recalledOrder.id);
+      setTimeout(() => setHighlightedTicketId(null), 2000);
+    }, 100);
+  }, [completedOrders]);
 
   const simulateNewOrder = useCallback(() => {
     const orderTypes: Array<"dine_in" | "pickup"> = ["dine_in", "pickup"];
@@ -586,7 +669,7 @@ export default function KDSPage() {
     const previousStatus = currentOrder?.status;
 
     setOrders((prevOrders) => {
-      return prevOrders.map((order) => {
+      const updatedOrders = prevOrders.map((order) => {
         if (order.id !== orderId) return order;
         
         // Update this station's status
@@ -600,8 +683,22 @@ export default function KDSPage() {
           ? Object.values(updatedStationStatuses).every(status => status === "ready")
           : false;
 
-        // If bumping from ready column and all stations ready, remove order
+        // If bumping from ready column and all stations ready, save to completed and remove order
         if (newStatus === "ready" && order.status === "ready" && allStationsReady) {
+          // Add to completed orders history
+          const completedOrder: CompletedOrder = {
+            id: order.id,
+            orderNumber: order.orderNumber,
+            orderType: order.orderType,
+            tableNumber: order.tableNumber,
+            customerName: order.customerName,
+            bumpedAt: new Date().toISOString(),
+            items: order.items,
+            createdAt: order.createdAt,
+            originalOrder: order,
+          };
+          
+          setCompletedOrders((prev) => [completedOrder, ...prev].slice(0, 10)); // Keep last 10
           return null as any;
         }
 
@@ -621,6 +718,8 @@ export default function KDSPage() {
           stationStatuses: updatedStationStatuses,
         };
       }).filter(Boolean) as Order[];
+      
+      return updatedOrders;
     });
 
     // Track the transition for animation based on station-specific status change
@@ -675,11 +774,14 @@ export default function KDSPage() {
         activeStationId={activeStationId}
         onStationChange={setActiveStationId}
         orderCounts={orderCounts}
+        completedOrders={completedOrders}
+        onRecall={handleRecall}
       />
       <div className="flex-1 overflow-hidden">
         <KDSColumns 
           orders={filteredOrders} 
           onAction={handleAction}
+          onRefire={handleRefire}
           highlightedTicketId={highlightedTicketId}
           currentStationId={activeStationId}
           stations={STATIONS}
