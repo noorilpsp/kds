@@ -5,6 +5,7 @@ import { KDSHeader, type Station } from "@/components/kds/KDSHeader";
 import { KDSColumns } from "@/components/kds/KDSColumns";
 import { KDSToastContainer, type OrderChange } from "@/components/kds/KDSNewOrderToast";
 import { Button } from "@/components/ui/button";
+import { ModificationToast } from "@/components/kds/KDSModificationToast"; // Import ModificationToast
 
 type OrderStatus = "pending" | "preparing" | "ready";
 
@@ -478,7 +479,7 @@ export default function KDSPage() {
   const [orders, setOrders] = useState<Order[]>(initialOrders);
   const [completedOrders, setCompletedOrders] = useState<CompletedOrder[]>([]);
   const [toasts, setToasts] = useState<NewOrderToast[]>([]);
-  const [modificationToasts, setModificationToasts] = useState<{ id: string; orderNumber: string; tableNumber: string | null; customerName: string | null; changes: { type: "added" | "removed" | "modified"; item: { name: string; quantity?: number; }; details?: string; }[]>([]);
+  const [modificationToasts, setModificationToasts] = useState<ModificationToast[]>([]);
   const [highlightedTicketId, setHighlightedTicketId] = useState<string | null>(null);
   const [activeStationId, setActiveStationId] = useState<string>(STATIONS[0].id);
   // Track tickets that just transitioned for animation purposes
@@ -543,7 +544,7 @@ export default function KDSPage() {
     }
   }, []);
 
-  const addModificationToast = useCallback((toast: { id: string; orderNumber: string; tableNumber: string | null; customerName: string | null; changes: { type: "added" | "removed" | "modified"; item: { name: string; quantity?: number; }; details?: string; }) => {
+  const addModificationToast = useCallback((toast: ModificationToast) => {
     setModificationToasts((prev) => {
       const updated = [toast, ...prev];
       return updated.slice(0, 3); // Max 3 toasts
@@ -785,7 +786,7 @@ export default function KDSPage() {
     ));
 
     // Create modification toast
-    const modificationToast: { id: string; orderNumber: string; tableNumber: string | null; customerName: string | null; changes: { type: "added" | "removed" | "modified"; item: { name: string; quantity?: number; }; details?: string; } = {
+    const modificationToast: ModificationToast = {
       id: order.id,
       orderNumber: order.orderNumber,
       tableNumber: order.tableNumber,
