@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useMemo } from "react";
 import { KDSHeader, type Station } from "@/components/kds/KDSHeader";
 import { KDSColumns } from "@/components/kds/KDSColumns";
-import { KDSToastContainer } from "@/components/kds/KDSNewOrderToast";
+import { KDSToastContainer, type OrderChange } from "@/components/kds/KDSNewOrderToast";
 import { Button } from "@/components/ui/button";
 
 type OrderStatus = "pending" | "preparing" | "ready";
@@ -15,6 +15,7 @@ interface OrderItem {
   quantity: number;
   customizations: string[];
   stationId?: string;
+  isNew?: boolean;
 }
 
 interface Order {
@@ -34,6 +35,8 @@ interface Order {
   originalOrderId?: string;
   isRecalled?: boolean;
   recalledAt?: string;
+  isModified?: boolean;
+  modifiedAt?: string;
 }
 
 interface CompletedOrder {
@@ -241,6 +244,8 @@ const initialOrders: Order[] = [
     customerName: null,
     status: "preparing",
     createdAt: minutesAgo(6),
+    modifiedAt: minutesAgo(1), // Modified 1 minute ago - highlights will show
+    isModified: true,
     stationStatuses: {
       kitchen: "preparing",
     },
@@ -252,6 +257,7 @@ const initialOrders: Order[] = [
         quantity: 1,
         customizations: [],
         stationId: "kitchen",
+        isNew: true, // This was added in the modification
       },
       {
         id: "8",
@@ -472,11 +478,13 @@ export default function KDSPage() {
   const [orders, setOrders] = useState<Order[]>(initialOrders);
   const [completedOrders, setCompletedOrders] = useState<CompletedOrder[]>([]);
   const [toasts, setToasts] = useState<NewOrderToast[]>([]);
+  const [modificationToasts, setModificationToasts] = useState<{ id: string; orderNumber: string; tableNumber: string | null; customerName: string | null; changes: { type: "added" | "removed" | "modified"; item: { name: string; quantity?: number; }; details?: string; }[]>([]);
   const [highlightedTicketId, setHighlightedTicketId] = useState<string | null>(null);
   const [activeStationId, setActiveStationId] = useState<string>(STATIONS[0].id);
   // Track tickets that just transitioned for animation purposes
   const [transitioningTickets, setTransitioningTickets] = useState<Map<string, { from: OrderStatus; to: OrderStatus }>>(new Map());
   const toastTimeoutRefs = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const modificationToastTimeoutRefs = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const nextOrderNumber = useRef(1248);
 
   const addToast = useCallback((order: Order) => {
@@ -532,6 +540,52 @@ export default function KDSPage() {
     if (timeout) {
       clearTimeout(timeout);
       toastTimeoutRefs.current.delete(orderId);
+    }
+  }, []);
+
+  const addModificationToast = useCallback((toast: { id: string; orderNumber: string; tableNumber: string | null; customerName: string | null; changes: { type: "added" | "removed" | "modified"; item: { name: string; quantity?: number; }; details?: string; }) => {
+    setModificationToasts((prev) => {
+      const updated = [toast, ...prev];
+      return updated.slice(0, 3); // Max 3 toasts
+    });
+
+    // Don't auto-dismiss - user must dismiss or view
+    const timeout = setTimeout(() => {
+      setModificationToasts((prev) => prev.filter((t) => t.id !== toast.id));
+      modificationToastTimeoutRefs.current.delete(toast.id);
+    }, 60000); // 60 seconds max display
+
+    modificationToastTimeoutRefs.current.set(toast.id, timeout);
+  }, []);
+
+  const handleModificationToastView = useCallback((orderId: string) => {
+    // Dismiss toast
+    setModificationToasts((prev) => prev.filter((t) => t.id !== orderId));
+    
+    // Clear timeout
+    const timeout = modificationToastTimeoutRefs.current.get(orderId);
+    if (timeout) {
+      clearTimeout(timeout);
+      modificationToastTimeoutRefs.current.delete(orderId);
+    }
+
+    // Scroll to ticket
+    const ticketElement = document.getElementById(`ticket-${orderId}`);
+    ticketElement?.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    // Highlight briefly
+    setHighlightedTicketId(orderId);
+    setTimeout(() => setHighlightedTicketId(null), 2000);
+  }, []);
+
+  const handleModificationToastDismiss = useCallback((orderId: string) => {
+    setModificationToasts((prev) => prev.filter((t) => t.id !== orderId));
+    
+    // Clear timeout
+    const timeout = modificationToastTimeoutRefs.current.get(orderId);
+    if (timeout) {
+      clearTimeout(timeout);
+      modificationToastTimeoutRefs.current.delete(orderId);
     }
   }, []);
 
@@ -663,6 +717,85 @@ export default function KDSPage() {
     addToast(newOrder);
   }, [addToast]);
 
+  const simulateOrderModification = useCallback(() => {
+    // Find a random order that's in NEW or PREPARING status
+    const modifiableOrders = orders.filter(o => o.status === "pending" || o.status === "preparing");
+    if (modifiableOrders.length === 0) return;
+
+    const order = modifiableOrders[Math.floor(Math.random() * modifiableOrders.length)];
+    
+    // Generate some mock changes
+    const changes: { type: "added" | "removed" | "modified"; item: { name: string; quantity?: number; }; details?: string; }[] = [];
+    
+    // 40% chance: add an item
+    if (Math.random() > 0.6) {
+      changes.push({
+        type: 'added',
+        item: {
+          name: 'Hawaiian',
+          quantity: 1,
+        }
+      });
+    }
+    
+    // 40% chance: remove an item
+    if (Math.random() > 0.6 && order.items.length > 1) {
+      const itemToRemove = order.items[Math.floor(Math.random() * order.items.length)];
+      changes.push({
+        type: 'removed',
+        item: {
+          name: itemToRemove.name,
+          quantity: 1,
+        }
+      });
+    }
+    
+    // 40% chance: modify an item
+    if (Math.random() > 0.6 && order.items.length > 0) {
+      const itemToModify = order.items[Math.floor(Math.random() * order.items.length)];
+      changes.push({
+        type: 'modified',
+        item: {
+          name: itemToModify.name,
+        },
+        details: 'Medium → Large'
+      });
+    }
+
+    // If no changes were generated, add at least one
+    if (changes.length === 0) {
+      changes.push({
+        type: 'added',
+        item: {
+          name: 'Garlic Bread',
+          quantity: 1,
+        }
+      });
+    }
+
+    // Update order to mark as modified
+    setOrders((prev) => prev.map(o => 
+      o.id === order.id 
+        ? { 
+            ...o, 
+            isModified: true, 
+            modifiedAt: new Date().toISOString() 
+          }
+        : o
+    ));
+
+    // Create modification toast
+    const modificationToast: { id: string; orderNumber: string; tableNumber: string | null; customerName: string | null; changes: { type: "added" | "removed" | "modified"; item: { name: string; quantity?: number; }; details?: string; } = {
+      id: order.id,
+      orderNumber: order.orderNumber,
+      tableNumber: order.tableNumber,
+      customerName: order.customerName,
+      changes,
+    };
+
+    addModificationToast(modificationToast);
+  }, [orders, addModificationToast]);
+
   const handleAction = (orderId: string, newStatus: OrderStatus) => {
     // Find the current order to track the transition
     const currentOrder = orders.find(o => o.id === orderId);
@@ -791,18 +924,28 @@ export default function KDSPage() {
       
       <KDSToastContainer 
         toasts={toasts}
+        modificationToasts={modificationToasts}
         onView={handleToastView}
         onDismiss={handleToastDismiss}
+        onModificationView={handleModificationToastView}
+        onModificationDismiss={handleModificationToastDismiss}
       />
 
-      {/* Demo button to simulate new orders */}
-      <div className="fixed bottom-4 right-4">
+      {/* Demo buttons to simulate new orders and modifications */}
+      <div className="fixed bottom-4 right-4 flex flex-col gap-2">
         <Button 
           onClick={simulateNewOrder}
           size="lg"
           className="shadow-lg"
         >
           Simulate New Order
+        </Button>
+        <Button 
+          onClick={simulateOrderModification}
+          size="lg"
+          className="shadow-lg bg-amber-600 hover:bg-amber-700"
+        >
+          Simulate Modification
         </Button>
       </div>
     </div>
