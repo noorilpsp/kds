@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useRef, useCallback, useMemo } from "react";
-import { KDSHeader, type Station } from "@/components/kds/KDSHeader";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
+import { KDSHeader, type Station, ViewMode } from "@/components/kds/KDSHeader";
 import { KDSColumns } from "@/components/kds/KDSColumns";
 import { KDSToastContainer, type OrderChange, type ModificationToast } from "@/components/kds/KDSNewOrderToast";
 import { KDSAllDayView } from "@/components/kds/KDSAllDayView";
 import { KDSBatchingHints, type BatchSuggestion } from "@/components/kds/KDSBatchingHints";
+import { KDS86Panel, type ItemStockStatus, type MenuItem, type StockStatus } from "@/components/kds/KDS86Panel";
+import { KDS86ToastContainer, type Stock86Toast } from "@/components/kds/KDS86Toast";
 import { Button } from "@/components/ui/button";
-import { ViewModeType } from "@/components/kds/types"; // Declare or import ViewModeType here
 
 type OrderStatus = "pending" | "preparing" | "ready";
 
@@ -40,6 +41,10 @@ interface Order {
   recalledAt?: string;
   isModified?: boolean;
   modifiedAt?: string;
+  isSnoozed?: boolean;
+  snoozedAt?: string;
+  snoozeUntil?: string;
+  wasSnoozed?: boolean;
 }
 
 interface CompletedOrder {
@@ -485,13 +490,18 @@ export default function KDSPage() {
   const [highlightedTicketId, setHighlightedTicketId] = useState<string | null>(null);
   const [batchHighlightedIds, setBatchHighlightedIds] = useState<string[]>([]);
   const [activeStationId, setActiveStationId] = useState<string>(STATIONS[0].id);
-  const [viewMode, setViewMode] = useState<ViewModeType>("tickets");
+  const [viewMode, setViewMode] = useState<ViewMode>("tickets");
   const [dismissedBatches, setDismissedBatches] = useState<Set<string>>(new Set());
+  const [show86Panel, setShow86Panel] = useState(false);
+  const [stockStatuses, setStockStatuses] = useState<ItemStockStatus[]>([]);
+  const [stock86Toasts, setStock86Toasts] = useState<Stock86Toast[]>([]);
   // Track tickets that just transitioned for animation purposes
   const [transitioningTickets, setTransitioningTickets] = useState<Map<string, { from: OrderStatus; to: OrderStatus }>>(new Map());
   const toastTimeoutRefs = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const modificationToastTimeoutRefs = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const stock86ToastTimeoutRefs = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const nextOrderNumber = useRef(1248);
+  const snoozeIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const addToast = useCallback((order: Order) => {
     const toast: NewOrderToast = {
@@ -683,6 +693,160 @@ export default function KDSPage() {
       setTimeout(() => setHighlightedTicketId(null), 2000);
     }, 100);
   }, [completedOrders]);
+
+  // Snooze handlers
+  const canSnooze = useCallback((order: Order): boolean => {
+    const now = new Date();
+    const createdAt = new Date(order.createdAt);
+    const waitMinutes = (now.getTime() - createdAt.getTime()) / 60000;
+    
+    // Cannot snooze urgent orders (10+ min wait)
+    if (waitMinutes >= 10) return false;
+    
+    // Cannot snooze if already snoozed before
+    if (order.wasSnoozed) return false;
+    
+    // Cannot snooze if currently snoozed
+    if (order.isSnoozed) return false;
+    
+    return true;
+  }, []);
+
+  const handleSnooze = useCallback((orderId: string, durationSeconds: number) => {
+    const now = new Date();
+    const snoozeUntil = new Date(now.getTime() + durationSeconds * 1000);
+    
+    setOrders(prev => prev.map(order => {
+      if (order.id === orderId) {
+        return {
+          ...order,
+          isSnoozed: true,
+          snoozedAt: now.toISOString(),
+          snoozeUntil: snoozeUntil.toISOString(),
+          wasSnoozed: true,
+        };
+      }
+      return order;
+    }));
+  }, []);
+
+  const handleWakeUp = useCallback((orderId: string) => {
+    setOrders(prev => prev.map(order => {
+      if (order.id === orderId) {
+        return {
+          ...order,
+          isSnoozed: false,
+          snoozedAt: undefined,
+          snoozeUntil: undefined,
+        };
+      }
+      return order;
+    }));
+  }, []);
+
+  // Check snoozed orders and wake them up when time expires
+  useEffect(() => {
+    snoozeIntervalRef.current = setInterval(() => {
+      const now = new Date();
+      setOrders(prev => prev.map(order => {
+        if (order.isSnoozed && order.snoozeUntil) {
+          const snoozeUntil = new Date(order.snoozeUntil);
+          if (now >= snoozeUntil) {
+            // Wake up the order
+            return {
+              ...order,
+              isSnoozed: false,
+              snoozedAt: undefined,
+              snoozeUntil: undefined,
+            };
+          }
+        }
+        return order;
+      }));
+    }, 1000); // Check every second
+
+    return () => {
+      if (snoozeIntervalRef.current) {
+        clearInterval(snoozeIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // 86 / Stock status handlers
+  const menuItems: MenuItem[] = useMemo(() => [
+    { id: "marg-1", name: "Margherita" },
+    { id: "pepp-1", name: "Pepperoni" },
+    { id: "hawaiian-1", name: "Hawaiian" },
+    { id: "bbq-1", name: "BBQ Chicken" },
+    { id: "caesar-1", name: "Caesar Salad" },
+    { id: "garlic-1", name: "Garlic Bread" },
+    { id: "ribeye-1", name: "Ribeye Steak" },
+    { id: "salmon-1", name: "Salmon" },
+    { id: "carbonara-1", name: "Carbonara" },
+    { id: "tiramisu-1", name: "Tiramisu" },
+  ], []);
+
+  const handleUpdateStockStatus = useCallback((itemId: string, status: StockStatus, count?: number) => {
+    const item = menuItems.find(m => m.id === itemId);
+    if (!item) return;
+
+    setStockStatuses(prev => {
+      const existing = prev.find(s => s.itemId === itemId);
+      const updated = prev.filter(s => s.itemId !== itemId);
+      
+      if (status === 'available') {
+        // Remove from list if set to available
+        return updated;
+      }
+      
+      const newStatus: ItemStockStatus = {
+        itemId,
+        itemName: item.name,
+        status,
+        lowCount: status === 'low' ? count : undefined,
+        updatedAt: new Date().toISOString(),
+        updatedBy: "Kitchen",
+      };
+      
+      // Only show toast if status changed (not just updating count)
+      if (!existing || existing.status !== status) {
+        // Add toast notification
+        const toast: Stock86Toast = {
+          id: `86-${Date.now()}`,
+          itemName: item.name,
+          status,
+          updatedBy: "Kitchen",
+          lowCount: count,
+        };
+        
+        setStock86Toasts(prevToasts => {
+          const newToasts = [toast, ...prevToasts];
+          return newToasts.slice(0, 3); // Max 3 toasts
+        });
+
+        // Auto dismiss after 10 seconds
+        const timeout = setTimeout(() => {
+          setStock86Toasts(prev => prev.filter(t => t.id !== toast.id));
+          stock86ToastTimeoutRefs.current.delete(toast.id);
+        }, 10000);
+        
+        stock86ToastTimeoutRefs.current.set(toast.id, timeout);
+      }
+      
+      return [...updated, newStatus];
+    });
+  }, [menuItems]);
+
+  const handle86ToastDismiss = useCallback((id: string) => {
+    setStock86Toasts(prev => prev.filter(t => t.id !== id));
+    const timeout = stock86ToastTimeoutRefs.current.get(id);
+    if (timeout) {
+      clearTimeout(timeout);
+      stock86ToastTimeoutRefs.current.delete(id);
+    }
+  }, []);
+
+  const eightySixCount = stockStatuses.filter(s => s.status !== 'available').length;
 
   const simulateNewOrder = useCallback(() => {
     const orderTypes: Array<"dine_in" | "pickup"> = ["dine_in", "pickup"];
@@ -989,6 +1153,8 @@ export default function KDSPage() {
         onRecall={handleRecall}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
+        eightySixCount={eightySixCount}
+        onEightySixClick={() => setShow86Panel(true)}
       />
       
       {viewMode === "tickets" && (
@@ -1028,6 +1194,20 @@ export default function KDSPage() {
         onModificationView={handleModificationToastView}
         onModificationDismiss={handleModificationToastDismiss}
       />
+
+      <KDS86ToastContainer 
+        toasts={stock86Toasts}
+        onDismiss={handle86ToastDismiss}
+      />
+
+      {show86Panel && (
+        <KDS86Panel
+          items={menuItems}
+          stockStatuses={stockStatuses}
+          onUpdateStatus={handleUpdateStockStatus}
+          onClose={() => setShow86Panel(false)}
+        />
+      )}
 
       {/* Demo buttons to simulate new orders and modifications */}
       <div className="fixed bottom-4 right-4 flex flex-col gap-2">

@@ -50,6 +50,8 @@ interface KDSHeaderProps {
   onRecall?: (orderId: string) => void;
   viewMode?: ViewMode;
   onViewModeChange?: (mode: ViewMode) => void;
+  eightySixCount?: number;
+  onEightySixClick?: () => void;
 }
 
 export function KDSHeader({ 
@@ -63,6 +65,8 @@ export function KDSHeader({
   onRecall,
   viewMode = "tickets",
   onViewModeChange,
+  eightySixCount = 0,
+  onEightySixClick,
 }: KDSHeaderProps) {
   const getTimeAgo = (bumpedAt: string) => {
     const elapsed = Math.floor((Date.now() - new Date(bumpedAt).getTime()) / 60000);
@@ -148,6 +152,23 @@ export function KDSHeader({
         <div className="text-muted-foreground">
           <span className="font-medium">{activeCount}</span> active
         </div>
+        
+        {onEightySixClick && (
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="gap-2 bg-transparent relative"
+            onClick={onEightySixClick}
+          >
+            <span className="text-lg">⚠️</span>
+            86
+            {eightySixCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                {eightySixCount}
+              </span>
+            )}
+          </Button>
+        )}
         
         {onRecall && (
           <DropdownMenu>

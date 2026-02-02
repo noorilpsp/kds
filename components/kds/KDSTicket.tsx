@@ -66,6 +66,10 @@ interface KDSTicketProps {
   isLanding?: boolean;
   landingType?: 'preparing' | 'ready';
   skipEntranceAnimation?: boolean;
+  canSnooze?: boolean;
+  onSnooze?: (orderId: string, durationSeconds: number) => void;
+  onWakeUp?: (orderId: string) => void;
+  stockStatuses?: Array<{itemName: string; status: string; lowCount?: number}>;
 }
 
 function getElapsedTime(createdAt: string): string {
@@ -169,6 +173,10 @@ export function KDSTicket({
   isLanding,
   landingType,
   skipEntranceAnimation = false,
+  canSnooze = false,
+  onSnooze,
+  onWakeUp,
+  stockStatuses = [],
 }: KDSTicketProps) {
   const { label, nextStatus } = getActionButton(order.status);
   const orderTypeBadge = ORDER_TYPE_BADGE[order.orderType] ?? ORDER_TYPE_BADGE.pickup;
@@ -178,6 +186,8 @@ export function KDSTicket({
   const [selectedItem, setSelectedItem] = useState<OrderItem | null>(null);
   const [refireReason, setRefireReason] = useState<string>("");
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
+  const [showSnoozePicker, setShowSnoozePicker] = useState(false);
+  const [snoozeCountdown, setSnoozeCountdown] = useState<string | null>(null);
 
   // Detect allergens
   const allergens = detectAllergens(order);
@@ -188,6 +198,21 @@ export function KDSTicket({
   const showModificationHighlights = order.isModified && order.modifiedAt 
     ? (Date.now() - new Date(order.modifiedAt).getTime()) < 120000
     : false;
+
+  // Check for stock issues
+  const stockIssues = order.items.filter(item => {
+    const stockStatus = stockStatuses.find(s => 
+      s.itemName.toLowerCase() === item.name.toLowerCase()
+    );
+    return stockStatus && stockStatus.status !== 'available';
+  }).map(item => {
+    const stockStatus = stockStatuses.find(s => 
+      s.itemName.toLowerCase() === item.name.toLowerCase()
+    );
+    return { item, stockStatus };
+  });
+  
+  const hasStockIssues = stockIssues.length > 0;
 
   const handleRefireClick = (item: OrderItem) => {
     setSelectedItem(item);
@@ -208,6 +233,23 @@ export function KDSTicket({
     const interval = setInterval(() => {
       setElapsedTime(getElapsedTime(order.createdAt));
       setUrgencyLevel(getUrgencyLevel(order.createdAt));
+      
+      // Update snooze countdown
+      if (order.isSnoozed && order.snoozeUntil) {
+        const now = new Date();
+        const until = new Date(order.snoozeUntil);
+        const remaining = Math.floor((until.getTime() - now.getTime()) / 1000);
+        
+        if (remaining > 0) {
+          const minutes = Math.floor(remaining / 60);
+          const seconds = remaining % 60;
+          setSnoozeCountdown(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+        } else {
+          setSnoozeCountdown(null);
+        }
+      } else {
+        setSnoozeCountdown(null);
+      }
     }, 1000);
 
     return () => clearInterval(interval);
