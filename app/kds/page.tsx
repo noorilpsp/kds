@@ -1,10 +1,9 @@
 "use client";
 
 import { useState, useRef, useCallback, useMemo } from "react";
-import { KDSHeader } from "@/components/kds/KDSHeader";
+import { KDSHeader, type Station } from "@/components/kds/KDSHeader";
 import { KDSColumns } from "@/components/kds/KDSColumns";
 import { KDSToastContainer } from "@/components/kds/KDSNewOrderToast";
-import { StationSwitcher, type Station } from "@/components/kds/StationSwitcher";
 import { Button } from "@/components/ui/button";
 
 type OrderStatus = "pending" | "preparing" | "ready";
@@ -669,8 +668,9 @@ export default function KDSPage() {
 
   return (
     <div className="h-screen flex flex-col">
-      <KDSHeader stationName={activeStation.name.toUpperCase()} activeCount={activeCount} />
-      <StationSwitcher 
+      <KDSHeader 
+        stationName={activeStation.name.toUpperCase()} 
+        activeCount={activeCount}
         stations={STATIONS}
         activeStationId={activeStationId}
         onStationChange={setActiveStationId}
